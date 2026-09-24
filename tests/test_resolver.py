@@ -1112,6 +1112,16 @@ class TestResolveXmlElements:
         gp = ctx._launch_configurations.get("global_params", [])
         assert any(name == "use_sim_time" for name, _ in gp)
 
+    def test_executable_with_shell_and_cwd(self):
+        """Official <executable> attrs beyond output must parse (shell/cwd/...)."""
+        xml = textwrap.dedent("""\
+            <launch>
+              <executable cmd="ls -l" name="my_ls" shell="true" cwd="/" output="log"/>
+            </launch>
+        """)
+        # Must not raise on official ExecuteProcess attributes.
+        _parse_and_walk(xml)
+
     # ── Include (with file on disk) ──
 
     def test_include_xml_inline(self):
@@ -1789,10 +1799,10 @@ class TestShimUnknownSubstitution:
 
 
 class TestExecutableInPackage:
-    """ExecutableInPackage substitution: preview raises, post-build resolves."""
+    """ExecutableInPackage substitution: preview preserves literal, post-build resolves."""
 
-    def test_raises_in_preview(self):
-        """ExecutableInPackage must raise LookupError in preview mode."""
+    def test_preserves_literal_in_preview(self, caplog):
+        """Preview mode keeps $(exec-in-pkg ...) and tracks the package."""
 
         from roscope.entities.substitution import TextSubstitution
         from roscope.entities.substitutions.executable_in_package import ExecutableInPackage
@@ -1803,8 +1813,11 @@ class TestExecutableInPackage:
             executable=[TextSubstitution(text="my_exec")],
             package=[TextSubstitution(text="my_pkg")],
         )
-        with pytest.raises(LookupError, match="preview mode"):
-            shim.perform(ctx)
+        with caplog.at_level(logging.WARNING):
+            result = shim.perform(ctx)
+        assert result == "$(exec-in-pkg my_exec my_pkg)"
+        assert "my_pkg" in ctx._state.packages
+        assert "preview mode" in caplog.text
 
     def test_xml_registered(self):
         """exec-in-pkg must be registered as an XML substitution."""
@@ -1849,6 +1862,65 @@ class TestExecutableInPackage:
         )
         result = shim.perform(ctx)
         assert result == str(exe_path)
+
+    def test_xml_executable_cmd_with_exec_in_pkg_preview(self, caplog):
+        """domain_bridge-style <executable cmd="$(exec-in-pkg ...)"> works in preview."""
+        xml = textwrap.dedent("""\
+            <launch>
+              <executable name="domain_bridge"
+                          cmd="$(exec-in-pkg domain_bridge domain_bridge) --from 1"
+                          output="both"/>
+            </launch>
+        """)
+        with caplog.at_level(logging.WARNING):
+            ctx = _fresh_walker_ctx(preview_mode=True)
+            elements = parse_xml_launch(xml, "domain_bridge.launch.xml")
+            resolved = resolve_xml_elements(elements, ctx)
+        assert len(resolved) == 1
+        assert resolved[0].name == "domain_bridge"
+        assert "$(exec-in-pkg domain_bridge domain_bridge)" in resolved[0].cmd
+        assert "domain_bridge" in ctx._state.packages
+        assert "preview mode" in caplog.text
+
+
+class TestLaunchSubstitutionModuleShim:
+    """launch.substitution (singular) exports Substitution base class."""
+
+    def test_launch_substitution_module_exports_substitution(self):
+        from roscope.entities.substitution import Substitution as RoscopeSubstitution
+
+        _install_import_patching()
+        assert "launch.substitution" in sys.modules
+        from launch.substitution import Substitution as Shimmed
+
+        assert Shimmed is RoscopeSubstitution
+
+    def test_subclass_from_launch_substitution_works(self):
+        """Autoware AD API adaptors: class Namespace(Substitution)."""
+        _install_import_patching()
+        from launch.substitution import Substitution
+
+        class Namespace(Substitution):
+            def __init__(self, separator, suffix):
+                self.separator = separator
+                self.suffix = suffix
+
+            def perform(self, context):
+                namespace = context.launch_configurations.get("ros_namespace", "")
+                namespace = f"{namespace}{self.separator}{self.suffix}"
+                return namespace.replace("/", self.separator).lstrip(self.separator)
+
+        ctx = _make_context()
+        ctx._launch_configurations["ros_namespace"] = "/ros/ns"
+        assert Namespace("/", "foo/bar").perform(ctx) == "ros/ns/foo/bar"
+
+    def test_top_level_launch_exports_substitution(self):
+        from roscope.entities.substitution import Substitution as RoscopeSubstitution
+
+        _install_import_patching()
+        import launch
+
+        assert launch.Substitution is RoscopeSubstitution
 
 
 class TestLaunchXmlShim:

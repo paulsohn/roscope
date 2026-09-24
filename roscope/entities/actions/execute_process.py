@@ -65,8 +65,9 @@ class ExecuteProcess(Action):
         else:
             self.name = normalize_to_list_of_substitutions(name)
         self.additional_env = kwargs.pop("additional_env", None)
+        # Keep in kwargs (do not pop): Node.__init__ reads output after super().__init__.
         # Matching official: output may be str (resolved) or substitution tokens.
-        output = kwargs.pop("output", None)
+        output = kwargs.get("output")
         if output is None or isinstance(output, str):
             self.output = output
         else:
@@ -142,11 +143,48 @@ class ExecuteProcess(Action):
             kwargs["cmd"] = cls._parse_cmdline(cmd_raw, parser)
         name_raw = entity.get_attr("name", optional=True)
         kwargs["name"] = parser.parse_substitution(name_raw) if name_raw else None
+        kwargs["additional_env"] = cls.parse_envs(entity, parser)
+
+        # Official ExecuteProcess / <executable> attributes (ros2/launch).
+        # Most are runtime-only and unused for topology, but must be consumed so
+        # assert_entity_completely_parsed() does not reject valid launch files.
         if "output" not in ignore:
             output = entity.get_attr("output", optional=True)
             if output is not None:
                 kwargs["output"] = parser.parse_substitution(output)
-        kwargs["additional_env"] = cls.parse_envs(entity, parser)
+        if "cwd" not in ignore:
+            cwd_raw = entity.get_attr("cwd", optional=True)
+            if cwd_raw is not None:
+                kwargs["cwd"] = parser.parse_substitution(cwd_raw)
+        if "shell" not in ignore:
+            shell = entity.get_attr("shell", data_type=bool, optional=True)
+            if shell is not None:
+                kwargs["shell"] = shell
+        if "emulate_tty" not in ignore:
+            emulate_tty = entity.get_attr("emulate_tty", data_type=bool, optional=True)
+            if emulate_tty is not None:
+                kwargs["emulate_tty"] = emulate_tty
+        if "launch-prefix" not in ignore:
+            prefix = entity.get_attr("launch-prefix", optional=True)
+            if prefix is not None:
+                kwargs["prefix"] = parser.parse_substitution(prefix)
+        if "respawn" not in ignore:
+            respawn = entity.get_attr("respawn", optional=True)
+            if respawn is not None:
+                kwargs["respawn"] = parser.parse_substitution(respawn)
+        if "respawn_delay" not in ignore:
+            respawn_delay = entity.get_attr("respawn_delay", optional=True)
+            if respawn_delay is not None:
+                kwargs["respawn_delay"] = parser.parse_substitution(respawn_delay)
+        if "respawn_max_retries" not in ignore:
+            entity.get_attr("respawn_max_retries", optional=True)
+        if "sigkill_timeout" not in ignore:
+            entity.get_attr("sigkill_timeout", optional=True)
+        if "sigterm_timeout" not in ignore:
+            entity.get_attr("sigterm_timeout", optional=True)
+        if "on_exit" not in ignore:
+            entity.get_attr("on_exit", optional=True)
+
         return cls, kwargs
 
     def execute(self, context) -> list:

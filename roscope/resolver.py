@@ -65,6 +65,7 @@ from roscope.entities.launch_description_sources import (
 )
 from roscope.entities.parameter_descriptions import ParameterFile
 from roscope.entities.parsing import Parser
+from roscope.entities.substitution import Substitution
 from roscope.entities.substitutions.env import EnvironmentVariable as _EnvironmentVariable
 from roscope.entities.substitutions.find_pkg_share import FindPackageShare
 from roscope.entities.substitutions.launch_config import LaunchConfiguration
@@ -150,6 +151,20 @@ def _build_patched_launch():
     mod.__package__ = "launch"
     mod.LaunchDescription = LaunchDescription
     mod.LaunchContext = LaunchContext
+    # Official launch/__init__.py also re-exports Substitution from launch.substitution.
+    mod.Substitution = Substitution
+    return mod
+
+
+def _build_patched_launch_substitution():
+    """Shim for ``launch.substitution`` (singular) — the Substitution base class module.
+
+    Distinct from ``launch.substitutions`` (plural), which holds concrete
+    substitution implementations.  Real launch files (e.g. Autoware AD API
+    adaptors) do ``from launch.substitution import Substitution``.
+    """
+    mod = types.ModuleType("launch.substitution")
+    mod.Substitution = Substitution
     return mod
 
 
@@ -395,6 +410,7 @@ class _PatchingFinder(importlib.abc.MetaPathFinder):
         "launch_ros.actions": _build_patched_launch_ros_actions,
         "launch_ros.utilities": _build_patched_launch_ros_utilities,
         "launch_ros.descriptions": _build_patched_launch_ros_descriptions,
+        "launch.substitution": _build_patched_launch_substitution,
         "launch.substitutions": _build_patched_launch_substitutions,
         "launch.substitutions.environment_variable": (
             _build_patched_launch_substitutions_environment_variable

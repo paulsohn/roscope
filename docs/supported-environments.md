@@ -252,8 +252,10 @@ unresolved substitution is visible in the resolved XML.
 executable in a package's libexec directory (`<prefix>/lib/<package>/`).
 roscope implements this substitution with mode-dependent behavior:
 
-- **Preview mode** — raises a `LookupError`.  The install tree is not available
-  before `colcon build`, so the executable path cannot be resolved.
+- **Preview mode** — the install tree is not available before `colcon build`,
+  so the path cannot be resolved.  The package is still tracked, a warning is
+  emitted, and the literal `$(exec-in-pkg ...)` expression is preserved in the
+  resolved output (same approach as `$(command ...)`).
 - **Post-build mode** — resolves the executable path from `AMENT_PREFIX_PATH`
   using the same logic as the official implementation: locate the package prefix
   via the AMENT index, then find the executable in `<prefix>/lib/<package>/`.

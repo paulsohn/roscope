@@ -20,8 +20,9 @@
 
 Mirrors ``launch_ros.substitutions.ExecutableInPackage``:
 
-- **Preview mode**: raises ``LookupError`` — the install tree (libexec
-  directory) is not available before ``colcon build``.
+- **Preview mode**: cannot resolve a libexec path (no install tree).  Tracks the
+  package, emits a warning, and preserves the literal ``$(exec-in-pkg ...)``
+  expression in the resolved output — same approach as ``$(command ...)``.
 - **Post-build mode**: resolves the executable path from
   ``<package_prefix>/lib/<package>/<executable>`` using ``AMENT_PREFIX_PATH``,
   matching the official ``which``-style lookup.
@@ -48,9 +49,9 @@ class ExecutableInPackage(Substitution):
     """Resolve ``$(exec-in-pkg <executable> <package>)`` to an executable path.
 
     Official: ``ExecutableInPackage`` locates the executable in the package's
-    ``lib/<package>`` directory (libexec).  Requires a built install tree.
+    ``lib/<package>`` directory (libexec).  Requires a built install tree in
+    post-build mode; preview mode preserves the literal expression.
 
-    :raise LookupError: in preview mode (no install tree available).
     :raise LookupError: in post-build mode when the package or executable
         cannot be found in ``AMENT_PREFIX_PATH``.
     """
@@ -81,14 +82,15 @@ class ExecutableInPackage(Substitution):
         ctx._state.track_package(pkg)
 
         if ctx._state.preview_mode:
-            logger.error(
-                "%s: $(exec-in-pkg %s %s) requires a built install tree and cannot be "
-                "resolved in preview mode; build the workspace first",
+            logger.warning(
+                "%s: $(exec-in-pkg %s %s) cannot resolve a libexec path in preview mode "
+                "(no install tree); preserving literal expression — "
+                "build the workspace for a concrete path",
                 _current_file(ctx),
                 exe,
                 pkg,
             )
-            raise LookupError(f"$(exec-in-pkg {exe} {pkg}) unavailable in preview mode")
+            return f"$(exec-in-pkg {exe} {pkg})"
 
         # Post-build: find package prefix via AMENT index, then look up libexec.
         # Mirrors official FindPackagePrefix + which() logic.
